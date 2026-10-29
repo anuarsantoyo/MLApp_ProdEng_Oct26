@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "kabu-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:kame6493-del/kabu-mcp"],
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}

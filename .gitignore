@@ -1,2 +1,6 @@
 /.env
 ProdEng/05_user_rag/data/
+ProdEng/07_retry_backoff/data/
+ProdEng/08_graceful_degradation/data/
+ProdEng/09_bulkhead/data/
+MLAppDev/**/data/
