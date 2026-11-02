@@ -13,7 +13,7 @@ import asyncio
 from fastapi import FastAPI, HTTPException
 
 MAX_CONCURRENT = 2  # how many charges may run at the same time
-WAIT_TIMEOUT = 0.25  # seconds a request waits for a free slot
+WAIT_TIMEOUT = 3  # seconds a request waits for a free slot
 CHARGE_TIME = 1.0  # pretend the billing provider needs one second
 
 # This semaphore is the bulkhead. Two permits means two charges at a time.

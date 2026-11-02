@@ -10,7 +10,7 @@ import time
 import httpx
 
 BASE_URL = "http://127.0.0.1:8007"
-REQUESTS = 6
+REQUESTS = 10
 
 
 async def charge(client: httpx.AsyncClient, n: int) -> None:

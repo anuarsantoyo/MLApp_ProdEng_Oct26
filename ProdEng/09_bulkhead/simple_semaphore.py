@@ -5,18 +5,21 @@
 
 import asyncio
 import time
+import random
 
-SLOTS = 2  # how many jobs may run at the same time
-JOBS = 6  # how many jobs we start at the same time
+
+SLOTS = 4  # how many jobs may run at the same time
+JOBS = 10  # how many jobs we start at the same time
 
 slots = asyncio.Semaphore(SLOTS)
 
 
 async def job(n: int) -> None:
     async with slots:  # wait here until a slot is free
+        start = time.perf_counter()
         print(f"job {n} started")
-        await asyncio.sleep(1)  # pretend the work takes one second
-        print(f"job {n} done")
+        await asyncio.sleep(1 + random.random())  # pretend the work takes one second
+        print(f"job {n} stared at {start} ended at {time.perf_counter()}")
 
 
 async def main() -> None:

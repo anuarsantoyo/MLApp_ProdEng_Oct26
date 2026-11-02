@@ -31,6 +31,7 @@ app = FastAPI()
 # curl http://127.0.0.1:8007/status
 @app.get("/status")
 def status():
+    slots.release()
     return {"charging_now": charging, "max_concurrent": MAX_CONCURRENT}
 
 

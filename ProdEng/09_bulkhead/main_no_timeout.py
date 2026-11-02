@@ -10,7 +10,7 @@
 # requests get a 503 instead of waiting their turn.
 
 import asyncio
-
+import random
 from fastapi import FastAPI
 
 MAX_CONCURRENT = 2  # how many charges may run at the same time
@@ -43,7 +43,7 @@ async def charge(user_id: int, amount: float = 10.0):
         charging += 1
         try:
             print(f"user {user_id} charging {amount}...")
-            await asyncio.sleep(CHARGE_TIME)  # pretend the provider is slow
+            await asyncio.sleep(CHARGE_TIME + random.random())  # pretend the provider is slow
             print(f"user {user_id} charged {amount}")
             return {"user_id": user_id, "amount": amount, "charged": True}
         finally:
