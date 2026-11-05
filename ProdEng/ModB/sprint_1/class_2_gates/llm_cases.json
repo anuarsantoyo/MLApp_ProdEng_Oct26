@@ -1,0 +1,31 @@
+[
+  {"id": "capital_france",
+   "prompt": "What is the capital of France? Reply with one word only.",
+   "expected": "paris",
+   "note": "Plain factual question: the model should always get this right"},
+
+  {"id": "arithmetic",
+   "prompt": "What is 12 + 15? Reply with the number only.",
+   "expected": "27",
+   "note": "Exact answer exists, so we can be strict"},
+
+  {"id": "sentiment_positive",
+   "prompt": "Classify the sentiment of this sentence: 'I love this app'. Reply with one word: positive, negative or neutral.",
+   "expected": "positive",
+   "note": "Easy sentiment case"},
+
+  {"id": "sentiment_negative",
+   "prompt": "Classify the sentiment of this sentence: 'The export is broken and support never answers'. Reply with one word: positive, negative or neutral.",
+   "expected": "negative",
+   "note": "Easy sentiment case"},
+
+  {"id": "sentiment_sarcasm",
+   "prompt": "Classify the sentiment of this sentence: 'Oh great, it crashed again'. Reply with one word: positive, negative or neutral.",
+   "expected": "negative",
+   "note": "Tricky: keyword rules read 'great' as positive, a real model should not"},
+
+  {"id": "translation",
+   "prompt": "Translate 'hello' to Spanish. Reply with one word only.",
+   "expected": "hola",
+   "note": "Checks that the model follows the 'one word only' instruction"}
+]
