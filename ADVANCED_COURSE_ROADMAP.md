@@ -2,7 +2,7 @@
 
 Masterschool — AI App Development + Product Engineering, advanced portion (Sprints 2-4).
 
-The two courses are merged into one **sequential 8-class course** (8 x 1.5h), teaching the raw skills as standalone tutorials. The arc: secure -> configure -> automate -> package -> deploy -> serve -> observe -> present.
+The two courses are merged into one **sequential 8-class course** (8 x 1.5h), teaching the raw skills as standalone tutorials. The arc: secure -> don't leak -> automate -> package -> deploy -> serve -> observe -> present.
 
 Each class is a self-contained tutorial students can revisit as a cheatsheet. This doc is the topic map; the actual lessons are built one at a time.
 
@@ -56,11 +56,11 @@ The teaching gold: the three-stop sequence. Unknown key -> 401. Known key but ou
 
 ---
 
-## Class 2 — Secrets & configuration
+## Class 2 — Secrets: don't leak
 
-A secret (API key, password, token) is still configuration — but configuration that becomes dangerous the moment it leaks.
+A secret (API key, password, token) is still configuration — but configuration that becomes dangerous the moment it leaks. This class covers everything that needs only Python and git (no Docker, no cloud): the three leak paths. "Secrets in the image" lands in Class 4; "secrets in the cloud" in Class 5.
 
-**The core distinction.** Configuration = safe to see (log level, model name, timeout). Secret = must never be committed to git, baked into an image, written into a log, or pasted into a prompt.
+**The core distinction.** Configuration = safe to see (log level, model name, timeout). Secret = must never be committed to git, written into a log, or pasted into a prompt.
 
 How the value gets in (the right way) — environment variables:
 
@@ -70,23 +70,32 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")     # config, has a default
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")  # secret, no default
 ```
 
-How secrets leak — three classic paths:
+Use a `.env` file locally (loaded with python-dotenv or pydantic-settings), and add `.env` to `.gitignore`.
+
+**Leak 1 — logs.** Log identity and outcome, never the private body:
 
 ```python
-# leak 1: logging the whole request (the key is inside it)
-logger.info(f"got request {request}")            # BAD
-logger.info(f"request_id={rid} route=/v1/answer")# GOOD
-
-# leak 2: pasting user input straight into a prompt
-#         (the input might contain a key the user typed)
-
-# leak 3: git. A committed .env is gone forever from history,
-#         even after you delete it and add .gitignore.
+logger.info(f"got request {request}")            # BAD: the key is inside
+logger.info(f"request_id={rid} route=/v1/answer")# GOOD: identity + outcome only
 ```
 
-**Same image, different config.** Build the app ONCE, run it three ways by changing environment variables — dev (deterministic provider, DEBUG), staging (cheap provider), prod (real provider, INFO, real secret from cloud secret storage). No dev.py/staging.py/prod.py copies.
+**Leak 2 — prompts.** Don't paste raw user input straight into a prompt — the input can contain a key or private text the user typed.
 
-**One thing to remember.** "Build once, configure for where it runs."
+**Leak 3 — git (the surprising one).** Deleting a file does not delete its history:
+
+```bash
+echo 'OPENROUTER_API_KEY=sk-secret' > .env
+git add .env && git commit -m "wip"   # 1. accidentally committed
+rm .env
+echo '.env' >> .gitignore
+git commit -m "remove .env"           # 2. deleted + ignored
+
+git log --all -p -- .env              # 3. sk-secret is STILL in history
+```
+
+`.gitignore` only stops FUTURE commits. A key that was ever committed is still recoverable from history — the honest guidance is: assume it's compromised, rotate the key, and scrub history with `git filter-repo` if the repo is shared.
+
+**One thing to remember.** "A secret leaks the moment it's copied somewhere it shouldn't be — a log, a prompt, or git history."
 
 ---
 
@@ -151,6 +160,8 @@ docker build -t myapp:local .
 docker run -p 8000:8000 myapp:local
 ```
 
+**Callback — secrets in the image.** An image is handed to everyone who pulls it. Don't put a key in the Dockerfile (`ENV OPENROUTER_API_KEY=...`) or `COPY .env .` into the image — that leaks it to everyone with pull access. Keys are injected at run time (see Class 5).
+
 **One thing to remember.** "A container is a portable runtime unit for your service." Build makes the image; run makes the container.
 
 ---
@@ -170,6 +181,10 @@ docker push ghcr.io/anuar/myapp:v1
 Image names: `ghcr.io/<owner>/<image>:<tag>` — registry / owner / name / version. The registry path must be lowercase.
 
 Then Cloud Run points at `ghcr.io/anuar/myapp:v1`, port 8000, plus env vars and secrets. It retrieves the image, runs it, and returns a public URL. Verify GET /health and the analyze endpoint against the public URL.
+
+**Same image, different config.** You built the app once; now configure it for the environment it runs in — dev (deterministic provider, DEBUG logging), staging (cheap provider), prod (real provider, INFO logging). Same image + different environment variables = different behavior, with zero code changes and no dev.py/staging.py/prod.py copies.
+
+**Secrets in the cloud.** Ordinary configuration values can be set in the platform directly; secrets go into Cloud Run's secret manager and are referenced by the service — never committed to git, never baked into the image.
 
 **Deploy != rewrite.** Same container, new environment.
 
@@ -257,20 +272,36 @@ Log identity and outcome — NOT the user's question text (private), NOT the API
 
 ## Class 8 — Capstone: a front door, a proof, and a handoff
 
-Three final things that turn a working API into a presentable project: a tiny UI (Streamlit), one end-to-end test, and documentation other humans can use.
+Three final things that turn a working API into a presentable project: a tiny UI (static HTML), one end-to-end test, and documentation other humans can use.
 
-**A tiny UI** — Streamlit, no HTML/JS:
+**A tiny UI** — a static HTML page that talks to the API. No HTML deep-dive; the point is that the browser is just another HTTP client, sending the same POST + JSON as curl:
+
+```html
+<!-- static/index.html -->
+<input id="q" placeholder="Question" />
+<textarea id="c" placeholder="Context"></textarea>
+<button onclick="ask()">Ask</button>
+<pre id="out"></pre>
+<script>
+  async function ask() {
+    const r = await fetch("/v1/answer", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: q.value, context: c.value})
+    });
+    out.textContent = JSON.stringify(await r.json(), null, 2);
+  }
+</script>
+```
+
+Serve it in one line:
 
 ```python
-import streamlit as st, requests
-
-question = st.text_input("Question")
-context  = st.text_area("Context")
-if st.button("Ask"):
-    r = requests.post("http://localhost:8000/v1/answer",
-                      json={"question": question, "context": context})
-    st.write(r.json())
+from fastapi.staticfiles import StaticFiles
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 ```
+
+(One-line mention: Streamlit is a Python way to build the same thing when you want a fuller app later.)
 
 **End-to-end test** — exercise UI -> service -> model across the real boundaries; deliberately break one link to prove the test can catch a failure.
 
@@ -294,4 +325,4 @@ Problem -> solution -> architecture -> evidence it works -> business value -> ho
 
 ## The full arc
 
-Secure -> configure -> automate -> package -> deploy -> serve -> observe -> present.
+Secure -> don't leak -> automate -> package -> deploy -> serve -> observe -> present.
