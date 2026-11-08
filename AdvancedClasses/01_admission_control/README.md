@@ -14,8 +14,8 @@ prepaid credits — all backed by SQLite.
 ## Run
 
 ```bash
-python create_db.py      # once: build + seed the database
-python app.py            # start on http://127.0.0.1:8000
+python create_db.py           # once: build + seed the database
+uvicorn app:app --reload      # start the server in a terminal
 ```
 
 Open http://127.0.0.1:8000/docs to poke the endpoints.
