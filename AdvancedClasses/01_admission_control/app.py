@@ -2,16 +2,13 @@
 
 The gates a request passes through, cheapest and most fundamental first:
 
-    401 authentication   -> who are you?
-    403 authorization    -> are you allowed? (only your own usage)
-    429 rate limit       -> how many / how fast? (requests per minute)
-    422 validation       -> is the body well-formed?
-    402 quota / credits  -> have you paid? (monthly allowance, then prepaid balance)
-    handler             -> the expensive work (simulated here)
+    POST /v1/analyze:    401 auth -> 429 rate limit -> 422 validation
+                         -> 402 monthly quota -> 402 credits -> handler
+    GET  /v1/usage/{id}: 401 auth -> 403 authorization (only your own)
 
 Run:
     python create_db.py        # once, to build + seed the database
-    python app.py              # starts on http://127.0.0.1:8000
+    uvicorn app:app --reload   # starts on http://127.0.0.1:8000
 
 Then open http://127.0.0.1:8000/docs to poke it, or use HTTP from the notebook.
 """
@@ -67,19 +64,17 @@ def require_key(x_api_key: str = Header(default=None)) -> dict:
         raise HTTPException(status_code=401, detail="Missing API key")
     conn = db()
     row = conn.execute(
-        "SELECT k.user_id, u.name, u.plan "
-        "FROM api_keys k JOIN users u ON u.user_id = k.user_id "
-        "WHERE k.key_hash = ?",
+        "SELECT user_id, name FROM users WHERE key_hash = ?",
         (sha256(x_api_key),),
     ).fetchone()
     conn.close()
     if row is None:
         raise HTTPException(status_code=401, detail="Unknown API key")
-    return {"user_id": row["user_id"], "name": row["name"], "plan": row["plan"]}
+    return {"user_id": row["user_id"], "name": row["name"]}
 
 
 # --------------------------------------------------------------------------
-# GATE 3 — Rate limit (429), sliding 60-second window, per caller
+# GATE 2 — Rate limit (429), sliding 60-second window, per caller
 # --------------------------------------------------------------------------
 def rate_limit(caller: dict = Depends(require_key)) -> dict:
     """How many / how fast? Count this caller's requests in the last 60s.
@@ -119,14 +114,14 @@ def analyze(caller: dict = Depends(rate_limit), body: AnalyzeRequest = Body(...)
     conn = db()
     uid = caller["user_id"]
 
-    # ---- GATE 4a — monthly token allowance (402) ----
+    # ---- GATE 3 — monthly token allowance (402) ----
     used = conn.execute(
-        "SELECT COALESCE(SUM(tokens), 0) AS s FROM usage_events "
+        "SELECT COALESCE(SUM(tokens), 0) AS s FROM usage "
         "WHERE user_id = ? AND ts >= datetime('now', 'start of month')",
         (uid,),
     ).fetchone()["s"]
     allowance = conn.execute(
-        "SELECT tokens_per_period AS t FROM subscription WHERE user_id = ?", (uid,)
+        "SELECT monthly_tokens AS t FROM users WHERE user_id = ?", (uid,)
     ).fetchone()["t"]
     if used + body.tokens > allowance:
         conn.close()
@@ -135,10 +130,10 @@ def analyze(caller: dict = Depends(rate_limit), body: AnalyzeRequest = Body(...)
             detail=f"Monthly token quota exceeded: {used}/{allowance} used this month",
         )
 
-    # ---- GATE 4b — prepaid credits (402), atomic spend ----
+    # ---- GATE 4 — prepaid credits (402), atomic spend ----
     cur = conn.execute(
-        "UPDATE credits SET balance = balance - ? "
-        "WHERE user_id = ? AND balance >= ?",
+        "UPDATE users SET credits = credits - ? "
+        "WHERE user_id = ? AND credits >= ?",
         (body.tokens, uid, body.tokens),
     )
     if cur.rowcount == 0:
@@ -147,8 +142,7 @@ def analyze(caller: dict = Depends(rate_limit), body: AnalyzeRequest = Body(...)
         raise HTTPException(status_code=402, detail="Insufficient credits — please top up")
 
     # ---- HANDLER — the (simulated) expensive work ----
-    conn.execute("INSERT INTO usage_events(user_id, tokens) VALUES (?, ?)",
-                 (uid, body.tokens))
+    conn.execute("INSERT INTO usage(user_id, tokens) VALUES (?, ?)", (uid, body.tokens))
     conn.commit()
     remaining = allowance - used - body.tokens
     conn.close()
@@ -161,7 +155,7 @@ def analyze(caller: dict = Depends(rate_limit), body: AnalyzeRequest = Body(...)
 
 
 # --------------------------------------------------------------------------
-# GATE 2 — Authorization (403): you may only read your own usage
+# GATE 5 — Authorization (403): you may only read your own usage
 # --------------------------------------------------------------------------
 @app.get("/v1/usage/{user_id}")
 def usage(user_id: str, caller: dict = Depends(require_key)):
@@ -169,15 +163,15 @@ def usage(user_id: str, caller: dict = Depends(require_key)):
         raise HTTPException(status_code=403, detail="You may only view your own usage")
     conn = db()
     used = conn.execute(
-        "SELECT COALESCE(SUM(tokens), 0) AS s FROM usage_events "
+        "SELECT COALESCE(SUM(tokens), 0) AS s FROM usage "
         "WHERE user_id = ? AND ts >= datetime('now', 'start of month')",
         (user_id,),
     ).fetchone()["s"]
     allowance = conn.execute(
-        "SELECT tokens_per_period AS t FROM subscription WHERE user_id = ?", (user_id,)
+        "SELECT monthly_tokens AS t FROM users WHERE user_id = ?", (user_id,)
     ).fetchone()["t"]
     credits = conn.execute(
-        "SELECT balance AS b FROM credits WHERE user_id = ?", (user_id,)
+        "SELECT credits AS b FROM users WHERE user_id = ?", (user_id,)
     ).fetchone()["b"]
     conn.close()
     return {
@@ -194,11 +188,11 @@ def usage(user_id: str, caller: dict = Depends(require_key)):
 @app.post("/v1/credits/topup")
 def topup(body: TopUpRequest, caller: dict = Depends(require_key)):
     conn = db()
-    conn.execute("UPDATE credits SET balance = balance + ? WHERE user_id = ?",
+    conn.execute("UPDATE users SET credits = credits + ? WHERE user_id = ?",
                  (body.amount, caller["user_id"]))
     conn.commit()
     balance = conn.execute(
-        "SELECT balance AS b FROM credits WHERE user_id = ?", (caller["user_id"],)
+        "SELECT credits AS b FROM users WHERE user_id = ?", (caller["user_id"],)
     ).fetchone()["b"]
     conn.close()
     return {"user_id": caller["user_id"], "credits": balance}
@@ -211,9 +205,9 @@ def topup(body: TopUpRequest, caller: dict = Depends(require_key)):
 def reset():
     conn = db()
     conn.execute("DELETE FROM request_log")
-    conn.execute("DELETE FROM usage_events")
-    conn.execute("UPDATE credits SET balance = 1000 WHERE user_id = 'alice'")
-    conn.execute("UPDATE credits SET balance = 600  WHERE user_id = 'bob'")
+    conn.execute("DELETE FROM usage")
+    conn.execute("UPDATE users SET credits = 1000 WHERE user_id = 'alice'")
+    conn.execute("UPDATE users SET credits = 600  WHERE user_id = 'bob'")
     conn.commit()
     conn.close()
     return {"reset": True}
