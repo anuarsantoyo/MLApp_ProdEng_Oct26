@@ -15,6 +15,8 @@ Then open http://127.0.0.1:8000/docs to poke it, or use HTTP from the notebook.
 import os
 import sqlite3
 import hashlib
+import time
+from collections import defaultdict
 
 from fastapi import FastAPI, Depends, HTTPException, Header, Body
 from pydantic import BaseModel
@@ -23,6 +25,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "class1.db")
 
 REQUESTS_PER_MINUTE = 5   # the time-based limit; change this to show the effect
+
+# in-memory rate-limit state: user_id -> recent request timestamps
+rate_hits = defaultdict(list)
 
 
 # --------------------------------------------------------------------------
@@ -77,26 +82,23 @@ def require_key(x_api_key: str = Header(default=None)) -> dict:
 # GATE 2 — Rate limit (429), sliding 60-second window, per caller
 # --------------------------------------------------------------------------
 def rate_limit(caller: dict = Depends(require_key)) -> dict:
-    """How many / how fast? Count this caller's requests in the last 60s.
+    """How many / how fast? A sliding 60-second window, kept in memory.
 
     The attempt is recorded BEFORE the body is validated, so a malformed
-    request (422) still consumes a slot. That is 'admission before validation'.
+    request (422) still consumes a slot. 'Admission before validation'.
+
+    In memory on purpose: rate limits are transient. Real systems keep this
+    in Redis (a shared in-memory store), not a database.
     """
-    conn = db()
-    used = conn.execute(
-        "SELECT COUNT(*) AS c FROM request_log "
-        "WHERE user_id = ? AND ts > datetime('now', '-60 seconds')",
-        (caller["user_id"],),
-    ).fetchone()["c"]
-    if used >= REQUESTS_PER_MINUTE:
-        conn.close()
+    now = time.time()
+    recent = [t for t in rate_hits[caller["user_id"]] if now - t < 60]
+    if len(recent) >= REQUESTS_PER_MINUTE:
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit reached: {REQUESTS_PER_MINUTE} requests per minute",
         )
-    conn.execute("INSERT INTO request_log(user_id) VALUES (?)", (caller["user_id"],))
-    conn.commit()
-    conn.close()
+    recent.append(now)
+    rate_hits[caller["user_id"]] = recent
     return caller
 
 
@@ -203,8 +205,8 @@ def topup(body: TopUpRequest, caller: dict = Depends(require_key)):
 # --------------------------------------------------------------------------
 @app.post("/_reset")
 def reset():
+    rate_hits.clear()
     conn = db()
-    conn.execute("DELETE FROM request_log")
     conn.execute("DELETE FROM usage")
     conn.execute("UPDATE users SET credits = 1000 WHERE user_id = 'alice'")
     conn.execute("UPDATE users SET credits = 600  WHERE user_id = 'bob'")

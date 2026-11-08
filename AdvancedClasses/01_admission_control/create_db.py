@@ -18,7 +18,6 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 SCHEMA = """
-DROP TABLE IF EXISTS request_log;
 DROP TABLE IF EXISTS usage;
 DROP TABLE IF EXISTS users;
 
@@ -35,12 +34,6 @@ CREATE TABLE users (
 CREATE TABLE usage (
     user_id TEXT NOT NULL,
     tokens  INTEGER NOT NULL,
-    ts      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- every request that reaches the rate limiter (even ones that later fail)
-CREATE TABLE request_log (
-    user_id TEXT NOT NULL,
     ts      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
