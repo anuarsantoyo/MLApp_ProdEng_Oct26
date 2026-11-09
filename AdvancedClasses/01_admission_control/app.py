@@ -91,7 +91,7 @@ def rate_limit(caller: dict = Depends(require_key)) -> dict:
     in Redis (a shared in-memory store), not a database.
     """
     now = time.time()
-    recent = [t for t in rate_hits[caller["user_id"]] if now - t < 60]
+    recent = [t for t in rate_hits[caller["user_id"]] if now - t < 10]
     if len(recent) >= REQUESTS_PER_MINUTE:
         raise HTTPException(
             status_code=429,
