@@ -17,6 +17,8 @@ import sqlite3
 import hashlib
 import time
 from collections import defaultdict
+import random
+import string
 
 from fastapi import FastAPI, Depends, HTTPException, Header, Body
 from pydantic import BaseModel
@@ -59,6 +61,9 @@ class AnalyzeRequest(BaseModel):
 class TopUpRequest(BaseModel):
     amount: int
 
+class NewUser(BaseModel):
+    name: str
+    monthly_tokens: int
 
 # --------------------------------------------------------------------------
 # GATE 1 — Authentication (401)
@@ -100,6 +105,14 @@ def rate_limit(caller: dict = Depends(require_key)) -> dict:
     recent.append(now)
     rate_hits[caller["user_id"]] = recent
     return caller
+
+
+
+# Random string with letters and digits
+def random_string(length=10):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
+
 
 
 # --------------------------------------------------------------------------
@@ -213,6 +226,23 @@ def reset():
     conn.commit()
     conn.close()
     return {"reset": True}
+
+
+
+
+@app.post("/v1/user/create")
+def analyze(new_user: NewUser):
+    new_user_id = new_user.name.lower()
+    api_key = random_string()
+    hash = sha256(api_key)
+
+    conn = db()
+    conn.execute("INSERT INTO users(user_id, name, key_hash, monthly_tokens, credits) VALUES (?, ?, ? , ? , ?)", (new_user_id, new_user.name, 
+                                                                                                                  hash, new_user.monthly_tokens, new_user.monthly_tokens))
+    conn.commit()
+    conn.close()
+
+    return {"api_key":api_key}
 
 
 if __name__ == "__main__":
