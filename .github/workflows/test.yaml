@@ -28,5 +28,5 @@ jobs:
       - name: Run tests with pytest
         run: pytest -v
 
-      - name: Run tests with pytest
-        run: pytest -v
+      - name: Run greeting
+        run: python greeting.py
