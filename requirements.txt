@@ -190,7 +190,6 @@ distro==1.9.0
 dnspython==2.9.0
 durationpy==0.11
 email-validator==2.3.0
--e git+https://github.com/anuarsantoyo/MLApp_ProdEng_Oct26.git@baf5940159b78149a95841501be02554b6bb1df6#egg=event_tagger_api
 executing==2.3.0
 fastapi==0.143.0
 fastembed==0.9.0
