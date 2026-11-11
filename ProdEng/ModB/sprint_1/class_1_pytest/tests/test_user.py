@@ -10,5 +10,5 @@ class TestUser:
 
     def test_user_email(self,sample_user):
         user = sample_user
-        assert user.email != "alice@example.com"
+        assert user.email == "alice@example.com"
 
