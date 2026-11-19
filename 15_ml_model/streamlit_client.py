@@ -4,7 +4,7 @@ import streamlit as st
 import requests
 
 # Basic POST with JSON
-url = "http://127.0.0.1:8000/penguins/"
+url = "https://penguins-prediction-1069652494481.europe-west1.run.app/penguins/"
 
 
 
